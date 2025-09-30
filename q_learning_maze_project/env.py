@@ -33,6 +33,9 @@ class environment():
         self.package = package_location
         self.drop_off = drop_off_location
 
+        self.grid[package_location[0],package_location[1]] = PACKAGE
+        self.grid[drop_off_location[0],drop_off_location[1]] = DROPOFF
+
         self.pos = self.START
         self.carrying = False
 
@@ -73,6 +76,7 @@ class environment():
             return int(self.grid[x,y])
         
     def step(self,action) -> tuple[tuple[int,int,int],float,bool,dict[str,Any]]:
+        print("step")
         reward = self.rewards.step
         nx,ny = self._move(self.pos,action)
 
@@ -85,12 +89,15 @@ class environment():
         type_of_next_square = self._next_square_type(next_pos) 
         pickup_event = False
         deliver_event = False
+        print(type_of_next_square)
 
         if type_of_next_square == PACKAGE and not self.carrying:
+            print("found package")
             self.carrying = True
             reward += self.rewards.pickup
             pickup_event = True
         if type_of_next_square == DROPOFF and self.carrying:
+            print("dropped_ off")
             self.carrying = False
             reward += self.rewards.deliver
             deliver_event = True
@@ -152,9 +159,14 @@ class environment():
 
         # agent
         x, y = self.pos
+
         ax.scatter([x], [y], s=120, marker="o", edgecolors="k",
                     facecolors=(0.1, 0.8, 0.3) if self.carrying else (0.9, 0.1, 0.3), zorder=3)
-
+        #gonna plot package and dropoff
+        ax.scatter([self.package[0]], [self.package[1]], s=120, marker="o", edgecolors="k",
+                    facecolors=(0.1, 0.2, 0.3) if self.carrying else (0.9, 0.9, 0.3), zorder=3)
+        ax.scatter([self.drop_off[0]], [self.drop_off[1]], s=120, marker="o", edgecolors="k",
+                    facecolors=(0.1, 0.8, 0.9) if self.carrying else (0.9, 0.1, 0.9), zorder=3)
         # optional policy arrows for carry=0 (or both if you want)
         if policy is not None:
             from matplotlib.patches import FancyArrow
