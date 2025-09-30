@@ -3,18 +3,11 @@ import matplotlib
 from dataclasses import dataclass
 from typing import Any,Optional
 
-FREE,WALL,PACKAGE,DESTINATION = 0,1,2,3
+FREE,WALL,PACKAGE,DROPOFF = 0,1,2,3
 # 0,0 is top left
 ACTIONS = [(0, -1), (0, 1), (-1, 0), (1, 0)]
 
 UP,DOWN,LEFT,RIGHT = 0,1,2,3
-
-
-grid = [[],
-        [],
-        [],
-        [],]
-
 
 @dataclass
 class rewards():
@@ -26,34 +19,62 @@ class rewards():
 class environment():
     def __init__(
             self,
-            package: tuple(int,int),
-            drop_off: tuple(int,int),
-            start:tuple(int,int),
+            package_location: tuple[int,int],
+            drop_off_location: tuple[int,int],
+            seed : Optional[int] = None,
     ):
         
-        self.H,self.W = 100,50
-        self.grid = np.zeros(self.H,self.W)
+        self.width,self.height = int(25),int(25)
+        self.grid = np.zeros((self.height,self.width))
         self.rewards = rewards()
-        self.max_steps = 400
+        self.max_steps = 50
 
-        self.start = (0,0)
-        self.package = package
-        self.drop_off = drop_off
-        self.start = start
-        self.pos = self.start
+        self.START = (0,0)
+        self.package = package_location
+        self.drop_off = drop_off_location
+
+        self.pos = self.START
         self.carrying = False
 
-        self.step_number =0
-
-    def reset(self) -> tuple(int,int,int):
-        self.pos = self.start
         self.step_number = 0
-        return self.state()
+        #for the random free space method
+        self.rng = np.random.default_rng(seed)
 
+    def reset(self) -> tuple[int,int,int]:
+        self.pos = self.START
+        self.step_number = 0
+        self.carrying = False
+        x, y = self.pos
+        return (x, y, int(self.carrying))
 
-    def step(self,action) -> tuple(tuple(int,int,int),float,bool,dict[str,Any]):
+    
+    def _get_state(self) -> tuple[int, int, int]:
+        x, y = self.pos
+        return (x, y, int(self.carrying))
+
+    def _tile(self, pos: tuple[int, int]) -> int:
+        x, y = pos
+        return int(self.grid[y, x])
+
+    def _wall_ahead(self, x: int, y: int) -> bool:
+        return not (0 <= x < self.width and 0 <= y < self.height) or self.grid[y, x] == WALL
+
+    def _move(self, pos: tuple[int, int], a: int) -> tuple[int, int]:
+        dx, dy = ACTIONS[a]
+        x, y = pos
+        return (x + dx, y + dy)
+
+    def _next_square_type(self,next_pos: tuple[int,int]) -> int:
+        x,y = next_pos
+        # treat edges and walls
+        if x < 0 or x > self.width or y < 0 or y > self.height:
+            return WALL
+        else:
+            return int(self.grid[x,y])
+        
+    def step(self,action) -> tuple[tuple[int,int,int],float,bool,dict[str,Any]]:
         reward = self.rewards.step
-        nx,ny = self.move(self.pos,action)
+        nx,ny = self._move(self.pos,action)
 
         if self._wall_ahead(nx,ny):
             reward += self.rewards.wall
@@ -65,11 +86,11 @@ class environment():
         pickup_event = False
         deliver_event = False
 
-        if type_of_next_square is PACKAGE and not self.carrying:
+        if type_of_next_square == PACKAGE and not self.carrying:
             self.carrying = True
             reward += self.rewards.pickup
             pickup_event = True
-        if type_of_next_square is DESTINATION and self.carrying:
+        if type_of_next_square == DROPOFF and self.carrying:
             self.carrying = False
             reward += self.rewards.deliver
             deliver_event = True
@@ -83,14 +104,26 @@ class environment():
             done = True
 
         info = {
-            "t": self._t,
+            "t": "Greedy Agent",
+            "step": self.step_number,
             "pickup": pickup_event,
             "deliver": deliver_event,
             "pos": self.pos,
         }
 
 
-        return (self.state(), reward, done, info)
+        return (self._get_state(), reward, done, info)
+    
+    # random free cell picker
+    def _sample_free_cell(self, exclude=()) -> tuple[int, int]:
+        mask = (self.grid == FREE)
+        for ex in exclude:
+            exx, exy = ex
+            if 0 <= exx < self.W and 0 <= exy < self.H:
+                mask[exy, exx] = False
+        ys, xs = np.where(mask)
+        idx = self.rng.integers(0, len(xs))
+        return (int(xs[idx]), int(ys[idx]))
 
 
         
@@ -106,27 +139,27 @@ class environment():
             show_now = True
 
         # base map: walls dark, free light; payload/drop colored
-        img = np.zeros((self.H, self.W, 3), dtype=float)
+        img = np.zeros((self.height, self.width, 3), dtype=float)
         img[self.grid == FREE] = (0.95, 0.95, 0.95)
         img[self.grid == WALL] = (0.2, 0.2, 0.2)
-        img[self.grid == PAYLOAD] = (0.2, 0.6, 1.0)
-        img[self.grid == DROP] = (1.0, 0.5, 0.2)
+        img[self.grid == PACKAGE] = (0.2, 0.6, 1.0)
+        img[self.grid == DROPOFF] = (1.0, 0.5, 0.2)
 
         ax.imshow(img, origin="upper")
-        ax.set_xticks(range(self.W)); ax.set_yticks(range(self.H))
+        ax.set_xticks(range(self.width)); ax.set_yticks(range(self.height))
         ax.grid(True, linewidth=0.5, color=(0,0,0,0.2))
         ax.set_xticklabels([]); ax.set_yticklabels([])
 
         # agent
         x, y = self.pos
         ax.scatter([x], [y], s=120, marker="o", edgecolors="k",
-                    facecolors=(0.1, 0.8, 0.3) if self.carry else (0.9, 0.1, 0.3), zorder=3)
+                    facecolors=(0.1, 0.8, 0.3) if self.carrying else (0.9, 0.1, 0.3), zorder=3)
 
         # optional policy arrows for carry=0 (or both if you want)
         if policy is not None:
             from matplotlib.patches import FancyArrow
-            for yy in range(self.H):
-                for xx in range(self.W):
+            for yy in range(self.height):
+                for xx in range(self.width):
                     if self.grid[yy, xx] == WALL: 
                         continue
                     a = int(np.argmax(policy[xx, yy, 0]))  # show for carry=0
@@ -135,47 +168,6 @@ class environment():
 
         if show_now:
             plt.tight_layout(); plt.show()
-
-
-        #--------------------------------------------------------------------------------------------
-        # smaller helper functions
-
-    def _state(self) -> Tuple[int, int, int]:
-        x, y = self.pos
-        return (x, y, int(self.carry))
-
-    def _tile(self, pos: Tuple[int, int]) -> int:
-        x, y = pos
-        return int(self.grid[y, x])
-
-    def _is_wall(self, x: int, y: int) -> bool:
-        return not (0 <= x < self.W and 0 <= y < self.H) or self.grid[y, x] == WALL
-
-    def _move(self, pos: Tuple[int, int], a: int) -> Tuple[int, int]:
-        dx, dy = ACTIONS[a]
-        x, y = pos
-        return (x + dx, y + dy)
-
-    def _sample_free_cell(self, exclude=()) -> Tuple[int, int]:
-        mask = (self.grid == FREE)
-        for ex in exclude:
-            exx, exy = ex
-            if 0 <= exx < self.W and 0 <= exy < self.H:
-                mask[exy, exx] = False
-        ys, xs = np.where(mask)
-        idx = self.rng.integers(0, len(xs))
-        return (int(xs[idx]), int(ys[idx]))
-
-        
-
-
-        
-
-
-
-        
-
-
 
         
         
