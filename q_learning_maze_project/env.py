@@ -1,7 +1,8 @@
 import numpy as np
-import matplotlib
+import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Any,Optional
+
 
 FREE,WALL,PACKAGE,DROPOFF = 0,1,2,3
 # 0,0 is top left
@@ -19,12 +20,14 @@ class rewards():
 class environment():
     def __init__(
             self,
+            width : int,
+            height: int,
             package_location: tuple[int,int],
             drop_off_location: tuple[int,int],
             seed : Optional[int] = None,
     ):
         
-        self.width,self.height = int(25),int(25)
+        self.width,self.height = width,height
         self.grid = np.zeros((self.height,self.width))
         self.rewards = rewards()
         self.max_steps = 50
@@ -33,8 +36,8 @@ class environment():
         self.package = package_location
         self.drop_off = drop_off_location
 
-        self.grid[package_location[0],package_location[1]] = PACKAGE
-        self.grid[drop_off_location[0],drop_off_location[1]] = DROPOFF
+        self.grid[package_location[1],package_location[0]] = PACKAGE
+        self.grid[drop_off_location[1],drop_off_location[0]] = DROPOFF
 
         self.pos = self.START
         self.carrying = False
@@ -111,7 +114,7 @@ class environment():
             done = True
 
         info = {
-            "t": "Greedy Agent",
+            "t": "thisis deprecated",
             "step": self.step_number,
             "pickup": pickup_event,
             "deliver": deliver_event,
@@ -180,6 +183,9 @@ class environment():
 
         if show_now:
             plt.tight_layout(); plt.show()
+
+
+
 
         
         
